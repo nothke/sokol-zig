@@ -14287,9 +14287,12 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
     _sapp_init_state(desc);
     _sapp.x11.window_state = NormalState;
 
+    #define TMARK(l) do { struct timespec ts_; clock_gettime(CLOCK_MONOTONIC, &ts_); fprintf(stderr, "[sokol] %s: %.1f ms\n", l, ts_.tv_sec*1e3 + ts_.tv_nsec/1e6); } while(0)
+    TMARK("x11 run start");
     XInitThreads();
     XrmInitialize();
     _sapp.x11.display = XOpenDisplay(NULL);
+    TMARK("XOpenDisplay");
     if (!_sapp.x11.display) {
         _SAPP_PANIC(LINUX_X11_OPEN_DISPLAY_FAILED);
     }
@@ -14299,21 +14302,29 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
     // NOTE: on Linux system-window-size to frame-buffer-size mapping is always 1:1
     _sapp.dpi_scale = _sapp.x11.dpi / 96.0f;
     _sapp_x11_init_extensions();
+    TMARK("extensions");
     _sapp_x11_create_standard_cursors();
+    TMARK("cursors");
     XkbSetDetectableAutoRepeat(_sapp.x11.display, true, NULL);
     _sapp_x11_init_keytable();
+    TMARK("keytable");
     #if defined(_SAPP_GLX)
         _sapp_glx_init();
+        TMARK("glx_init");
         Visual* visual = 0;
         int depth = 0;
         _sapp_glx_choose_visual(&visual, &depth);
+        TMARK("choose_visual");
         _sapp_x11_create_window(visual, depth);
+        TMARK("create_window");
         _sapp_glx_create_context();
+        TMARK("create_context");
         if (_sapp.desc.disable_vsync) {
             _sapp_glx_swapinterval(0);
         } else {
             _sapp_glx_swapinterval(_sapp.desc.swap_interval);
         }
+        TMARK("swapinterval");
     #elif defined(_SAPP_EGL)
         _sapp_egl_init();
     #elif defined(SOKOL_WGPU)
@@ -14324,8 +14335,10 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
         _sapp_vk_init();
     #endif
     sapp_set_icon(&desc->icon);
+    TMARK("icon");
     _sapp.valid = true;
     _sapp_x11_show_window();
+    TMARK("show_window");
     if (_sapp.fullscreen) {
         _sapp_x11_set_fullscreen(true);
     }
@@ -14339,7 +14352,9 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
             XNextEvent(_sapp.x11.display, &event);
             _sapp_x11_process_event(&event);
         }
+        if (_sapp.frame_count < 2) TMARK("events processed");
         _sapp_linux_frame();
+        if (_sapp.frame_count < 3) TMARK("frame+swap done");
         _sapp_x11_update_mouse_lock();
         XFlush(_sapp.x11.display);
         // handle quit-requested, either from window or from sapp_request_quit()
