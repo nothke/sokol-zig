@@ -2088,6 +2088,8 @@ typedef struct sapp_desc {
     bool disable_vsync;                 // optional and with differing behaviour, consider this a debugging feature!
     bool high_dpi;                      // whether the rendering canvas is full-resolution on HighDPI displays
     bool fullscreen;                    // whether the window should be created in fullscreen mode
+    bool maximized;                     // whether the window should be shown maximized (Win32 and X11 only)
+    uint32_t window_background_color;   // 0xAARRGGBB shown before the first frame (Win32 and X11 only), alpha 0 = platform default
     const char* window_title;           // the window title as UTF-8 encoded string
     bool enable_clipboard;              // enable clipboard access, default is false
     int clipboard_size;                 // max size of clipboard content in bytes
@@ -3203,6 +3205,8 @@ typedef struct {
     Atom NET_WM_ICON;
     Atom NET_WM_STATE;
     Atom NET_WM_STATE_FULLSCREEN;
+    Atom NET_WM_STATE_MAXIMIZED_VERT;
+    Atom NET_WM_STATE_MAXIMIZED_HORZ;
     _sapp_xi_t xi;
     _sapp_xdnd_t xdnd;
     // XLib manual says keycodes are in the range [8, 255] inclusive.
@@ -9962,6 +9966,15 @@ _SOKOL_PRIVATE LRESULT CALLBACK _sapp_win32_wndproc(HWND hWnd, UINT uMsg, WPARAM
                 }
                 break;
             case WM_ERASEBKGND:
+                // only until the first frame, afterwards erasing would flicker during resize
+                if ((_sapp.desc.window_background_color >> 24) && (0 == _sapp.frame_count)) {
+                    const uint32_t c = _sapp.desc.window_background_color;
+                    RECT rect;
+                    GetClientRect(hWnd, &rect);
+                    HBRUSH brush = CreateSolidBrush(RGB((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF));
+                    FillRect((HDC)wParam, &rect, brush);
+                    DeleteObject(brush);
+                }
                 return 1;
             case WM_SIZE:
                 {
@@ -10208,7 +10221,7 @@ _SOKOL_PRIVATE void _sapp_win32_create_window(void) {
         _sapp_win32_set_fullscreen(_sapp.fullscreen, SWP_HIDEWINDOW);
         _sapp_win32_update_dimensions();
     }
-    ShowWindow(_sapp.win32.hwnd, SW_SHOW);
+    ShowWindow(_sapp.win32.hwnd, (_sapp.desc.maximized && !_sapp.fullscreen) ? SW_SHOWMAXIMIZED : SW_SHOW);
     DragAcceptFiles(_sapp.win32.hwnd, 1);
 }
 
@@ -12271,6 +12284,8 @@ _SOKOL_PRIVATE void _sapp_x11_init_extensions(void) {
     _sapp.x11.NET_WM_ICON             = XInternAtom(_sapp.x11.display, "_NET_WM_ICON", False);
     _sapp.x11.NET_WM_STATE            = XInternAtom(_sapp.x11.display, "_NET_WM_STATE", False);
     _sapp.x11.NET_WM_STATE_FULLSCREEN = XInternAtom(_sapp.x11.display, "_NET_WM_STATE_FULLSCREEN", False);
+    _sapp.x11.NET_WM_STATE_MAXIMIZED_VERT = XInternAtom(_sapp.x11.display, "_NET_WM_STATE_MAXIMIZED_VERT", False);
+    _sapp.x11.NET_WM_STATE_MAXIMIZED_HORZ = XInternAtom(_sapp.x11.display, "_NET_WM_STATE_MAXIMIZED_HORZ", False);
     _sapp.x11.CLIPBOARD = XInternAtom(_sapp.x11.display, "CLIPBOARD", False);
     _sapp.x11.TARGETS   = XInternAtom(_sapp.x11.display, "TARGETS", False);
     if (_sapp.drop.enabled) {
@@ -13280,6 +13295,29 @@ _SOKOL_PRIVATE void _sapp_x11_set_icon(const sapp_icon_desc* icon_desc, int num_
     XFlush(_sapp.x11.display);
 }
 
+// scales each 8-bit channel of 0xAARRGGBB into the visual's channel mask; bits outside
+// the RGB masks (alpha on 32-bit visuals) are set so a compositor shows the color opaque
+_SOKOL_PRIVATE unsigned long _sapp_x11_truecolor_channel(uint32_t value8, unsigned long mask) {
+    if (0 == mask) {
+        return 0;
+    }
+    int shift = 0;
+    while (0 == ((mask >> shift) & 1)) {
+        shift++;
+    }
+    const unsigned long max = mask >> shift;
+    return (((unsigned long)value8 * max + 127) / 255) << shift;
+}
+
+_SOKOL_PRIVATE unsigned long _sapp_x11_truecolor_pixel(Visual* visual, int depth, uint32_t argb) {
+    const unsigned long rgb_mask = visual->red_mask | visual->green_mask | visual->blue_mask;
+    const unsigned long depth_mask = (depth >= 32) ? 0xFFFFFFFFUL : ((1UL << depth) - 1);
+    return _sapp_x11_truecolor_channel((argb >> 16) & 0xFF, visual->red_mask) |
+           _sapp_x11_truecolor_channel((argb >> 8) & 0xFF, visual->green_mask) |
+           _sapp_x11_truecolor_channel(argb & 0xFF, visual->blue_mask) |
+           (depth_mask & ~rgb_mask);
+}
+
 _SOKOL_PRIVATE void _sapp_x11_create_window(Visual* visual_or_null, int depth) {
     Visual* visual = visual_or_null;
     if (0 == visual_or_null) {
@@ -13288,9 +13326,14 @@ _SOKOL_PRIVATE void _sapp_x11_create_window(Visual* visual_or_null, int depth) {
     }
     _sapp.x11.colormap = XCreateColormap(_sapp.x11.display, _sapp.x11.root, visual, AllocNone);
     _SAPP_STRUCT(XSetWindowAttributes, wa);
-    const uint32_t wamask = CWBorderPixel | CWColormap | CWEventMask;
+    uint32_t wamask = CWBorderPixel | CWColormap | CWEventMask;
     wa.colormap = _sapp.x11.colormap;
     wa.border_pixel = 0;
+    if (_sapp.desc.window_background_color >> 24) {
+        // fills the window until the first frame is presented (otherwise undefined, often white)
+        wamask |= CWBackPixel;
+        wa.background_pixel = _sapp_x11_truecolor_pixel(visual, depth, _sapp.desc.window_background_color);
+    }
     wa.event_mask = StructureNotifyMask | KeyPressMask | KeyReleaseMask |
                     PointerMotionMask | ButtonPressMask | ButtonReleaseMask |
                     ExposureMask | FocusChangeMask | VisibilityChangeMask |
@@ -13335,6 +13378,12 @@ _SOKOL_PRIVATE void _sapp_x11_create_window(Visual* visual_or_null, int depth) {
     hints->win_gravity = CenterGravity;
     XSetWMNormalHints(_sapp.x11.display, _sapp.x11.window, hints);
     XFree(hints);
+
+    // set before the window is mapped so it appears maximized, without a visible resize
+    if (_sapp.desc.maximized && _sapp.x11.NET_WM_STATE && _sapp.x11.NET_WM_STATE_MAXIMIZED_VERT && _sapp.x11.NET_WM_STATE_MAXIMIZED_HORZ) {
+        Atom states[2] = { _sapp.x11.NET_WM_STATE_MAXIMIZED_VERT, _sapp.x11.NET_WM_STATE_MAXIMIZED_HORZ };
+        XChangeProperty(_sapp.x11.display, _sapp.x11.window, _sapp.x11.NET_WM_STATE, XA_ATOM, 32, PropModeReplace, (unsigned char*) states, 2);
+    }
 
     // announce support for drag'n'drop
     if (_sapp.drop.enabled) {
@@ -14287,12 +14336,9 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
     _sapp_init_state(desc);
     _sapp.x11.window_state = NormalState;
 
-    #define TMARK(l) do { struct timespec ts_; clock_gettime(CLOCK_MONOTONIC, &ts_); fprintf(stderr, "[sokol] %s: %.1f ms\n", l, ts_.tv_sec*1e3 + ts_.tv_nsec/1e6); } while(0)
-    TMARK("x11 run start");
     XInitThreads();
     XrmInitialize();
     _sapp.x11.display = XOpenDisplay(NULL);
-    TMARK("XOpenDisplay");
     if (!_sapp.x11.display) {
         _SAPP_PANIC(LINUX_X11_OPEN_DISPLAY_FAILED);
     }
@@ -14302,29 +14348,21 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
     // NOTE: on Linux system-window-size to frame-buffer-size mapping is always 1:1
     _sapp.dpi_scale = _sapp.x11.dpi / 96.0f;
     _sapp_x11_init_extensions();
-    TMARK("extensions");
     _sapp_x11_create_standard_cursors();
-    TMARK("cursors");
     XkbSetDetectableAutoRepeat(_sapp.x11.display, true, NULL);
     _sapp_x11_init_keytable();
-    TMARK("keytable");
     #if defined(_SAPP_GLX)
         _sapp_glx_init();
-        TMARK("glx_init");
         Visual* visual = 0;
         int depth = 0;
         _sapp_glx_choose_visual(&visual, &depth);
-        TMARK("choose_visual");
         _sapp_x11_create_window(visual, depth);
-        TMARK("create_window");
         _sapp_glx_create_context();
-        TMARK("create_context");
         if (_sapp.desc.disable_vsync) {
             _sapp_glx_swapinterval(0);
         } else {
             _sapp_glx_swapinterval(_sapp.desc.swap_interval);
         }
-        TMARK("swapinterval");
     #elif defined(_SAPP_EGL)
         _sapp_egl_init();
     #elif defined(SOKOL_WGPU)
@@ -14335,10 +14373,8 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
         _sapp_vk_init();
     #endif
     sapp_set_icon(&desc->icon);
-    TMARK("icon");
     _sapp.valid = true;
     _sapp_x11_show_window();
-    TMARK("show_window");
     if (_sapp.fullscreen) {
         _sapp_x11_set_fullscreen(true);
     }
@@ -14352,9 +14388,7 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
             XNextEvent(_sapp.x11.display, &event);
             _sapp_x11_process_event(&event);
         }
-        if (_sapp.frame_count < 2) TMARK("events processed");
         _sapp_linux_frame();
-        if (_sapp.frame_count < 3) TMARK("frame+swap done");
         _sapp_x11_update_mouse_lock();
         XFlush(_sapp.x11.display);
         // handle quit-requested, either from window or from sapp_request_quit()
