@@ -5869,6 +5869,8 @@ inline int sg_append_buffer(sg_buffer buf_id, const sg_range& data) { return sg_
 #ifdef SOKOL_GFX_IMPL
 #define SOKOL_GFX_IMPL_INCLUDED (1)
 
+#include "sokol_tracy.h" // fork: optional Tracy zones (SOKOL_TRACY)
+
 #if !(defined(SOKOL_GLCORE)||defined(SOKOL_GLES3)||defined(SOKOL_D3D11)||defined(SOKOL_METAL)||defined(SOKOL_WGPU)||defined(SOKOL_VULKAN)||defined(SOKOL_DUMMY_BACKEND))
 #error "Please select a backend with SOKOL_GLCORE, SOKOL_GLES3, SOKOL_D3D11, SOKOL_METAL, SOKOL_WGPU, SOKOL_VULKAN or SOKOL_DUMMY_BACKEND"
 #endif
@@ -14141,9 +14143,13 @@ _SOKOL_PRIVATE bool _sg_d3d11_load_d3dcompiler_dll(void) {
 }
 
 _SOKOL_PRIVATE ID3DBlob* _sg_d3d11_compile_shader(const sg_shader_function* shd_func) {
-    if (!_sg_d3d11_load_d3dcompiler_dll()) {
+    _SOKOL_TRACY_ZONE(tz_dll, "sg: load d3dcompiler_47.dll");
+    const bool dll_loaded = _sg_d3d11_load_d3dcompiler_dll();
+    _SOKOL_TRACY_ZONE_END(tz_dll);
+    if (!dll_loaded) {
         return NULL;
     }
+    _SOKOL_TRACY_ZONE(tz_compile, "sg: D3DCompile");
     SOKOL_ASSERT(shd_func->d3d11_target);
     UINT flags1 = D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR;
     if (_sg.desc.d3d11.shader_debugging) {
@@ -14165,6 +14171,7 @@ _SOKOL_PRIVATE ID3DBlob* _sg_d3d11_compile_shader(const sg_shader_function* shd_
         0,          // Flags2
         &output,    // ppCode
         &errors_or_warnings);   // ppErrorMsgs
+    _SOKOL_TRACY_ZONE_END(tz_compile);
     if (FAILED(hr)) {
         _SG_ERROR(D3D11_SHADER_COMPILATION_FAILED);
     }
@@ -26497,6 +26504,7 @@ SOKOL_API_IMPL void sg_setup(const sg_desc* desc) {
     SOKOL_ASSERT(desc);
     SOKOL_ASSERT((desc->_start_canary == 0) && (desc->_end_canary == 0));
     SOKOL_ASSERT((desc->allocator.alloc_fn && desc->allocator.free_fn) || (!desc->allocator.alloc_fn && !desc->allocator.free_fn));
+    _SOKOL_TRACY_ZONE(tz_setup, "sg: setup");
     _SG_CLEAR_ARC_STRUCT(_sg_state_t, _sg);
     _sg.desc = _sg_desc_defaults(desc);
     _sg_setup_pools(&_sg.pools, &_sg.desc);
@@ -26506,6 +26514,7 @@ SOKOL_API_IMPL void sg_setup(const sg_desc* desc) {
     _sg_setup_backend(&_sg.desc);
     _sg_override_portable_limits();
     _sg.valid = true;
+    _SOKOL_TRACY_ZONE_END(tz_setup);
 }
 
 SOKOL_API_IMPL void sg_shutdown(void) {
@@ -27046,7 +27055,9 @@ SOKOL_API_IMPL sg_image sg_make_image(const sg_image_desc* desc) {
     if (img_id.id != SG_INVALID_ID) {
         _sg_image_t* img = _sg_image_at(img_id.id);
         SOKOL_ASSERT(img && (img->slot.state == SG_RESOURCESTATE_ALLOC));
+        _SOKOL_TRACY_ZONE(tz_img, "sg: make image");
         _sg_init_image(img, &desc_def);
+        _SOKOL_TRACY_ZONE_END(tz_img);
         SOKOL_ASSERT(_sg_resource_state_valid_failed_unsealed(img->slot.state));
     }
     _SG_TRACE_ARGS(make_image, &desc_def, img_id);
@@ -27076,7 +27087,9 @@ SOKOL_API_IMPL sg_shader sg_make_shader(const sg_shader_desc* desc) {
     if (shd_id.id != SG_INVALID_ID) {
         _sg_shader_t* shd = _sg_shader_at(shd_id.id);
         SOKOL_ASSERT(shd && (shd->slot.state == SG_RESOURCESTATE_ALLOC));
+        _SOKOL_TRACY_ZONE(tz_shd, "sg: make shader");
         _sg_init_shader(shd, &desc_def);
+        _SOKOL_TRACY_ZONE_END(tz_shd);
         SOKOL_ASSERT(_sg_resource_state_valid_failed(shd->slot.state));
     }
     _SG_TRACE_ARGS(make_shader, &desc_def, shd_id);
@@ -27091,7 +27104,9 @@ SOKOL_API_IMPL sg_pipeline sg_make_pipeline(const sg_pipeline_desc* desc) {
     if (pip_id.id != SG_INVALID_ID) {
         _sg_pipeline_t* pip = _sg_pipeline_at(pip_id.id);
         SOKOL_ASSERT(pip && (pip->slot.state == SG_RESOURCESTATE_ALLOC));
+        _SOKOL_TRACY_ZONE(tz_pip, "sg: make pipeline");
         _sg_init_pipeline(pip, &desc_def);
+        _SOKOL_TRACY_ZONE_END(tz_pip);
         SOKOL_ASSERT(_sg_resource_state_valid_failed(pip->slot.state));
     }
     _SG_TRACE_ARGS(make_pipeline, &desc_def, pip_id);
@@ -27506,7 +27521,9 @@ SOKOL_API_IMPL void sg_commit(void) {
     SOKOL_ASSERT(_sg.valid);
     SOKOL_ASSERT(!_sg.cur_pass.valid);
     SOKOL_ASSERT(!_sg.cur_pass.in_pass);
+    _SOKOL_TRACY_ZONE(tz_commit, "sg: commit");
     _sg_commit();
+    _SOKOL_TRACY_ZONE_END(tz_commit);
     _sg_update_stats();
     _sg_notify_commit_listeners();
     _SG_TRACE_NOARGS(commit);
@@ -27616,7 +27633,9 @@ SOKOL_API_IMPL void sg_update_image(sg_image img_id, const sg_image_data* data) 
     if (img && img->slot.state == SG_RESOURCESTATE_VALID) {
         if (_sg_validate_update_image(img, data)) {
             SOKOL_ASSERT(img->cmn.upd_frame_index != _sg.frame_index);
+            _SOKOL_TRACY_ZONE(tz_upd, "sg: update image");
             _sg_update_image(img, data);
+            _SOKOL_TRACY_ZONE_END(tz_upd);
             img->cmn.upd_frame_index = _sg.frame_index;
         }
     }

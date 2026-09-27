@@ -2319,6 +2319,8 @@ inline void sapp_run(const sapp_desc& desc) { return sapp_run(&desc); }
 #ifdef SOKOL_APP_IMPL
 #define SOKOL_APP_IMPL_INCLUDED (1)
 
+#include "sokol_tracy.h" // fork: optional Tracy zones (SOKOL_TRACY)
+
 #if defined(SOKOL_MALLOC) || defined(SOKOL_CALLOC) || defined(SOKOL_FREE)
 #error "SOKOL_MALLOC/CALLOC/FREE macros are no longer supported, please use sapp_desc.allocator to override memory allocation functions"
 #endif
@@ -9109,7 +9111,9 @@ _SOKOL_PRIVATE void _sapp_d3d11_present(bool from_winproc) {
             swap_interval = 0;
         }
     }
+    _SOKOL_TRACY_ZONE(tz_present, "sapp: present");
     _sapp_dxgi_Present(_sapp.d3d11.swap_chain, swap_interval, flags);
+    _SOKOL_TRACY_ZONE_END(tz_present);
 }
 
 #endif /* SOKOL_D3D11 */
@@ -10168,6 +10172,7 @@ _SOKOL_PRIVATE LRESULT CALLBACK _sapp_win32_wndproc(HWND hWnd, UINT uMsg, WPARAM
 }
 
 _SOKOL_PRIVATE void _sapp_win32_create_window(void) {
+    _SOKOL_TRACY_ZONE(tz_create, "sapp: create window");
     _SAPP_STRUCT(WNDCLASSW, wndclassw);
     wndclassw.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     wndclassw.lpfnWndProc = (WNDPROC) _sapp_win32_wndproc;
@@ -10193,6 +10198,7 @@ _SOKOL_PRIVATE void _sapp_win32_create_window(void) {
     const int win_height = rect.bottom - rect.top;
     _sapp.win32.in_create_window = true;
     _sapp.win32.surrogate = 0;
+    _SOKOL_TRACY_ZONE(tz_createex, "CreateWindowExW");
     _sapp.win32.hwnd = CreateWindowExW(
         win_ex_style,               // dwExStyle
         L"SOKOLAPP",                // lpClassName
@@ -10206,6 +10212,7 @@ _SOKOL_PRIVATE void _sapp_win32_create_window(void) {
         NULL,                       // hMenu
         GetModuleHandle(NULL),      // hInstance
         NULL);                      // lParam
+    _SOKOL_TRACY_ZONE_END(tz_createex);
     _sapp.win32.in_create_window = false;
     _sapp.win32.dc = GetDC(_sapp.win32.hwnd);
     _sapp.win32.hmonitor = MonitorFromWindow(_sapp.win32.hwnd, MONITOR_DEFAULTTONULL);
@@ -10221,8 +10228,11 @@ _SOKOL_PRIVATE void _sapp_win32_create_window(void) {
         _sapp_win32_set_fullscreen(_sapp.fullscreen, SWP_HIDEWINDOW);
         _sapp_win32_update_dimensions();
     }
+    _SOKOL_TRACY_ZONE(tz_show, "ShowWindow");
     ShowWindow(_sapp.win32.hwnd, (_sapp.desc.maximized && !_sapp.fullscreen) ? SW_SHOWMAXIMIZED : SW_SHOW);
+    _SOKOL_TRACY_ZONE_END(tz_show);
     DragAcceptFiles(_sapp.win32.hwnd, 1);
+    _SOKOL_TRACY_ZONE_END(tz_create);
 }
 
 _SOKOL_PRIVATE void _sapp_win32_destroy_window(void) {
@@ -10525,6 +10535,7 @@ _SOKOL_PRIVATE bool _sapp_win32_is_win10_or_greater(void) {
 }
 
 _SOKOL_PRIVATE void _sapp_win32_run(const sapp_desc* desc) {
+    _SOKOL_TRACY_ZONE(tz_setup, "sapp: win32 setup");
     _sapp_init_state(desc);
     _sapp_win32_init_console();
     _sapp.win32.is_win10_or_greater = _sapp_win32_is_win10_or_greater();
@@ -10532,11 +10543,24 @@ _SOKOL_PRIVATE void _sapp_win32_run(const sapp_desc* desc) {
     _sapp_win32_utf8_to_wide(_sapp.window_title, _sapp.window_title_wide, sizeof(_sapp.window_title_wide));
     _sapp_win32_init_dpi();
     _sapp_win32_init_cursors();
+    _SOKOL_TRACY_ZONE_END(tz_setup);
     _sapp_win32_create_window();
-    sapp_set_icon(&desc->icon);
+    {
+        _SOKOL_TRACY_ZONE(tz_icon, "sapp: set icon");
+        sapp_set_icon(&desc->icon);
+        _SOKOL_TRACY_ZONE_END(tz_icon);
+    }
     #if defined(SOKOL_D3D11)
-        _sapp_d3d11_create_device_and_swapchain();
-        _sapp_d3d11_create_default_render_target();
+        {
+            _SOKOL_TRACY_ZONE(tz_device, "sapp: d3d11 device + swapchain");
+            _sapp_d3d11_create_device_and_swapchain();
+            _SOKOL_TRACY_ZONE_END(tz_device);
+        }
+        {
+            _SOKOL_TRACY_ZONE(tz_rt, "sapp: d3d11 render target");
+            _sapp_d3d11_create_default_render_target();
+            _SOKOL_TRACY_ZONE_END(tz_rt);
+        }
     #elif defined(SOKOL_GLCORE)
         _sapp_wgl_init();
         _sapp_wgl_load_extensions();
@@ -12964,7 +12988,9 @@ _SOKOL_PRIVATE void _sapp_glx_destroy_context(void) {
 }
 
 _SOKOL_PRIVATE void _sapp_glx_swap_buffers(void) {
+    _SOKOL_TRACY_ZONE(tz_swap, "sapp: swap buffers");
     _sapp.glx.SwapBuffers(_sapp.x11.display, _sapp.glx.window);
+    _SOKOL_TRACY_ZONE_END(tz_swap);
 }
 
 _SOKOL_PRIVATE void _sapp_glx_swapinterval(int interval) {
@@ -14336,6 +14362,7 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
     _sapp_init_state(desc);
     _sapp.x11.window_state = NormalState;
 
+    _SOKOL_TRACY_ZONE(tz_setup, "sapp: x11 setup");
     XInitThreads();
     XrmInitialize();
     _sapp.x11.display = XOpenDisplay(NULL);
@@ -14351,17 +14378,34 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
     _sapp_x11_create_standard_cursors();
     XkbSetDetectableAutoRepeat(_sapp.x11.display, true, NULL);
     _sapp_x11_init_keytable();
+    _SOKOL_TRACY_ZONE_END(tz_setup);
     #if defined(_SAPP_GLX)
-        _sapp_glx_init();
+        {
+            _SOKOL_TRACY_ZONE(tz_glx, "sapp: glx init");
+            _sapp_glx_init();
+            _SOKOL_TRACY_ZONE_END(tz_glx);
+        }
         Visual* visual = 0;
         int depth = 0;
-        _sapp_glx_choose_visual(&visual, &depth);
-        _sapp_x11_create_window(visual, depth);
-        _sapp_glx_create_context();
-        if (_sapp.desc.disable_vsync) {
-            _sapp_glx_swapinterval(0);
-        } else {
-            _sapp_glx_swapinterval(_sapp.desc.swap_interval);
+        {
+            _SOKOL_TRACY_ZONE(tz_visual, "sapp: glx choose visual");
+            _sapp_glx_choose_visual(&visual, &depth);
+            _SOKOL_TRACY_ZONE_END(tz_visual);
+        }
+        {
+            _SOKOL_TRACY_ZONE(tz_create, "sapp: create window");
+            _sapp_x11_create_window(visual, depth);
+            _SOKOL_TRACY_ZONE_END(tz_create);
+        }
+        {
+            _SOKOL_TRACY_ZONE(tz_ctx, "sapp: glx create context");
+            _sapp_glx_create_context();
+            if (_sapp.desc.disable_vsync) {
+                _sapp_glx_swapinterval(0);
+            } else {
+                _sapp_glx_swapinterval(_sapp.desc.swap_interval);
+            }
+            _SOKOL_TRACY_ZONE_END(tz_ctx);
         }
     #elif defined(_SAPP_EGL)
         _sapp_egl_init();
@@ -14372,9 +14416,17 @@ _SOKOL_PRIVATE void _sapp_linux_run(const sapp_desc* desc) {
         _sapp_x11_create_window(0, 0);
         _sapp_vk_init();
     #endif
-    sapp_set_icon(&desc->icon);
+    {
+        _SOKOL_TRACY_ZONE(tz_icon, "sapp: set icon");
+        sapp_set_icon(&desc->icon);
+        _SOKOL_TRACY_ZONE_END(tz_icon);
+    }
     _sapp.valid = true;
-    _sapp_x11_show_window();
+    {
+        _SOKOL_TRACY_ZONE(tz_show, "sapp: show window");
+        _sapp_x11_show_window();
+        _SOKOL_TRACY_ZONE_END(tz_show);
+    }
     if (_sapp.fullscreen) {
         _sapp_x11_set_fullscreen(true);
     }

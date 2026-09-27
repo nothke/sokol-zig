@@ -73,6 +73,7 @@ pub fn build(b: *Build) !void {
     const opt_use_egl = b.option(bool, "egl", "Force EGL (default: false, Linux only)") orelse false;
     const opt_with_sokol_imgui = b.option(bool, "with_sokol_imgui", "Add support for sokol_imgui.h bindings") orelse false;
     const opt_with_tracing = b.option(bool, "with_tracing", "Add support for sokol_gfx tracing and debug UI") orelse false;
+    const opt_with_tracy = b.option(bool, "with_tracy", "Emit Tracy profiler zones from sokol_app/sokol_gfx; the Tracy client must be linked into the executable (fork only, default: false)") orelse false;
     const opt_dont_link_system_libs = b.option(bool, "dont_link_system_libs", "Do not link system libraries required by sokol (default: false)") orelse false;
     const opt_sokol_imgui_cprefix = b.option([]const u8, "sokol_imgui_cprefix", "Override Dear ImGui C bindings prefix for sokol_imgui.h (see SOKOL_IMGUI_CPREFIX)");
     const opt_cimgui_header_path = b.option([]const u8, "cimgui_header_path", "Override the Dear ImGui C bindings header name (default: cimgui.h)");
@@ -99,6 +100,7 @@ pub fn build(b: *Build) !void {
         .use_egl = opt_use_egl,
         .with_sokol_imgui = opt_with_sokol_imgui or opt_with_tracing,
         .with_tracing = opt_with_tracing,
+        .with_tracy = opt_with_tracy,
         .sokol_imgui_cprefix = opt_sokol_imgui_cprefix,
         .cimgui_header_path = opt_cimgui_header_path,
         .emsdk = emsdk,
@@ -145,6 +147,8 @@ pub const LibSokolOptions = struct {
     emsdk: ?*Build.Dependency = null,
     with_sokol_imgui: bool = false,
     with_tracing: bool = false,
+    /// Fork: Tracy zones in sokol_app/sokol_gfx (src/sokol/c/sokol_tracy.h).
+    with_tracy: bool = false,
     sokol_imgui_cprefix: ?[]const u8 = null,
     cimgui_header_path: ?[]const u8 = null,
     dont_link_system_libs: bool = true,
@@ -210,6 +214,9 @@ pub fn buildLibSokol(b: *Build, options: LibSokolOptions) !*Build.Step.Compile {
     try cflags.appendBounded("-DIMPL");
     if (options.with_tracing) {
         try cflags.appendBounded("-DSOKOL_TRACE_HOOKS");
+    }
+    if (options.with_tracy) {
+        try cflags.appendBounded("-DSOKOL_TRACY");
     }
     if (!isOptimizeModeDebug(options.optimize)) {
         try cflags.appendBounded("-DNDEBUG");
