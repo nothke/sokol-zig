@@ -2067,6 +2067,7 @@ typedef struct sapp_android_desc {
 
 typedef struct sapp_desc {
     void (*init_cb)(void);                  // these are the user-provided callbacks without user data
+    void (*early_init_cb)(void);            // called after window creation, before backend init (Win32: after ShowWindow, before D3D11)
     void (*frame_cb)(void);
     void (*cleanup_cb)(void);
     void (*event_cb)(const sapp_event*);
@@ -10548,6 +10549,12 @@ _SOKOL_PRIVATE void _sapp_win32_run(const sapp_desc* desc) {
     {
         _SOKOL_TRACY_ZONE(tz_icon, "sapp: set icon");
         sapp_set_icon(&desc->icon);
+        _SOKOL_TRACY_ZONE_END(tz_icon);
+    }
+    if (_sapp.desc.early_init_cb)
+    {
+        _SOKOL_TRACY_ZONE(tz_icon, "sapp: early init cb");
+        _sapp.desc.early_init_cb();
         _SOKOL_TRACY_ZONE_END(tz_icon);
     }
     #if defined(SOKOL_D3D11)

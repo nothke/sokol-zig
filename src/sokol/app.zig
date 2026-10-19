@@ -1975,6 +1975,7 @@ pub const AndroidDesc = extern struct {
 
 pub const Desc = extern struct {
     init_cb: ?*const fn () callconv(.c) void = null,
+    early_init_cb: ?*const fn () callconv(.c) void = null,
     frame_cb: ?*const fn () callconv(.c) void = null,
     cleanup_cb: ?*const fn () callconv(.c) void = null,
     event_cb: ?*const fn ([*c]const Event) callconv(.c) void = null,
