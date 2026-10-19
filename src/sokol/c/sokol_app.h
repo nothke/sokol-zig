@@ -15074,7 +15074,13 @@ SOKOL_API_IMPL const void* sapp_win32_get_hwnd(void) {
 
 SOKOL_API_IMPL bool sapp_win32_update_dimensions(void) {
     #if defined(_SAPP_WIN32)
-        return _sapp_win32_update_dimensions();
+        const bool changed = _sapp_win32_update_dimensions();
+        #if defined(SOKOL_D3D11)
+            if (changed) {
+                _sapp_d3d11_resize_default_render_target();
+            }
+        #endif
+        return changed;
     #else
         return false;
     #endif
