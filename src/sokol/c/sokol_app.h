@@ -15116,7 +15116,7 @@ SOKOL_API_IMPL const void* sapp_d3d11_get_swap_chain(void) {
 }
 
 SOKOL_API_IMPL const void* sapp_win32_get_hwnd(void) {
-    SOKOL_ASSERT(_sapp.valid);
+    // NOTE: _sapp.valid is not asserted here because it should be available in early_init_cb
     #if defined(_SAPP_WIN32)
         return _sapp.win32.hwnd;
     #else
