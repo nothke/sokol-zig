@@ -2282,6 +2282,9 @@ SOKOL_APP_API_DECL const void* sapp_d3d11_get_swap_chain(void);
 /* Win32: get the HWND window handle */
 SOKOL_APP_API_DECL const void* sapp_win32_get_hwnd(void);
 
+/* Win32: refresh cached window dimensions from the current client rect */
+SOKOL_APP_API_DECL bool sapp_win32_update_dimensions(void);
+
 /* GL: get major version */
 SOKOL_APP_API_DECL int sapp_gl_get_major_version(void);
 /* GL: get minor version */
@@ -15066,6 +15069,14 @@ SOKOL_API_IMPL const void* sapp_win32_get_hwnd(void) {
         return _sapp.win32.hwnd;
     #else
         return 0;
+    #endif
+}
+
+SOKOL_API_IMPL bool sapp_win32_update_dimensions(void) {
+    #if defined(_SAPP_WIN32)
+        return _sapp_win32_update_dimensions();
+    #else
+        return false;
     #endif
 }
 

@@ -2464,6 +2464,14 @@ pub fn win32GetHwnd() ?*const anyopaque {
     return sapp_win32_get_hwnd();
 }
 
+/// Win32: refresh cached window dimensions from the current client rect
+extern fn sapp_win32_update_dimensions() bool;
+
+/// Win32: refresh cached window dimensions from the current client rect
+pub fn win32UpdateDimensions() bool {
+    return sapp_win32_update_dimensions();
+}
+
 /// GL: get major version
 extern fn sapp_gl_get_major_version() i32;
 
